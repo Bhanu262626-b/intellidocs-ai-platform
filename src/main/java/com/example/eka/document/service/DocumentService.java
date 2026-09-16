@@ -18,8 +18,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 
 
@@ -41,8 +44,17 @@ public class DocumentService {
 
     public String extractText(MultipartFile file) throws IOException{
 
+        byte[] fileBytes = file.getBytes();
+        String fileHash = computeHash(fileBytes);
+
+        Optional<DocumentEntity> existing = repository.findByFileHash(fileHash);
+        if (existing.isPresent()) {
+            System.out.println("Duplicate file detected, skipping re-upload: " + file.getOriginalFilename());
+            return existing.get().getContent();
+        }
+
         PDDocument document =
-                Loader.loadPDF(file.getBytes());
+                Loader.loadPDF(fileBytes);
 
         PDFTextStripper stripper = new PDFTextStripper();
         String text = stripper.getText(document);
@@ -55,6 +67,7 @@ public class DocumentService {
         List<String> chunks= chunkText(text);
 
         DocumentEntity documentEntity= new DocumentEntity(file.getOriginalFilename(), text);
+        documentEntity.setFileHash(fileHash);
         repository.save(documentEntity);
 
         for(String chunk:chunks){
@@ -124,6 +137,20 @@ public class DocumentService {
         }
 
         return text.toString();
+    }
+
+    private String computeHash(byte[] data) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("Unable to compute file hash", e);
+        }
     }
 
     private List<String> chunkText(String text){

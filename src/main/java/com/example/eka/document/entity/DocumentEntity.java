@@ -21,6 +21,9 @@ public class DocumentEntity {
 
     private LocalDateTime uploadedAt;
 
+    @Column(unique = true, length = 64)
+    private String fileHash;
+
     @JsonIgnore
     @OneToMany(
             mappedBy = "document",
@@ -77,6 +80,14 @@ public class DocumentEntity {
 
     public void setUploadedAt(LocalDateTime uploadedAt) {
         this.uploadedAt = uploadedAt;
+    }
+
+    public String getFileHash() {
+        return fileHash;
+    }
+
+    public void setFileHash(String fileHash) {
+        this.fileHash = fileHash;
     }
 
 }
