@@ -6,12 +6,17 @@ import com.example.eka.document.entity.DocumentEntity;
 import com.example.eka.document.repository.DocumentChunkRepository;
 import com.example.eka.document.repository.DocumentRepository;
 import com.example.eka.embedding.service.EmbeddingService;
+import net.sourceforge.tess4j.Tesseract;
+import net.sourceforge.tess4j.TesseractException;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +29,9 @@ public class DocumentService {
     private final DocumentRepository repository;
     private final EmbeddingService embeddingService;
     private final DocumentChunkRepository chunkRepository;
+
+    @Value("${ocr.tessdata-path}")
+    private String tessdataPath;
 
     public DocumentService(DocumentRepository repository, EmbeddingService embeddingService, DocumentChunkRepository chunkRepository){
         this.repository = repository;
@@ -38,6 +46,12 @@ public class DocumentService {
 
         PDFTextStripper stripper = new PDFTextStripper();
         String text = stripper.getText(document);
+
+        if (text.isBlank()) {
+            System.out.println("No embedded text found, falling back to OCR");
+            text = ocrText(document);
+        }
+
         List<String> chunks= chunkText(text);
 
         DocumentEntity documentEntity= new DocumentEntity(file.getOriginalFilename(), text);
@@ -90,6 +104,26 @@ public class DocumentService {
             throw new RuntimeException("Document not found");
         }
         repository.deleteById(id);
+    }
+
+    private String ocrText(PDDocument document) throws IOException {
+        Tesseract tesseract = new Tesseract();
+        tesseract.setDatapath(tessdataPath);
+
+        PDFRenderer renderer = new PDFRenderer(document);
+        StringBuilder text = new StringBuilder();
+
+        for (int page = 0; page < document.getNumberOfPages(); page++) {
+            BufferedImage image = renderer.renderImageWithDPI(page, 300);
+            try {
+                text.append(tesseract.doOCR(image));
+                text.append("\n");
+            } catch (TesseractException e) {
+                throw new IOException("OCR failed on page " + page, e);
+            }
+        }
+
+        return text.toString();
     }
 
     private List<String> chunkText(String text){
